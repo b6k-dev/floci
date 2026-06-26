@@ -333,12 +333,15 @@ class SecretsManagerServiceTest {
         service.createSecret("secret1", "value1", null, null, null, null, REGION);
         service.createSecret("secret2", "value2", null, null, null, null, REGION);
 
-        List<SecretsManagerService.BatchSecretValue> values = service.batchGetSecretValue(
+        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(
                 List.of("secret1", "secret2"), REGION);
 
+        List<SecretsManagerService.BatchSecretValue> values = result.values();
         assertEquals(2, values.size());
         assertTrue(values.stream().anyMatch(v -> "secret1".equals(v.name()) && "value1".equals(v.secretString())));
         assertTrue(values.stream().anyMatch(v -> "secret2".equals(v.name()) && "value2".equals(v.secretString())));
+
+        assertEquals(0, result.errors().size());
     }
 
     @Test
@@ -347,18 +350,32 @@ class SecretsManagerServiceTest {
         service.createSecret("secret2", "value2", null, null, null, null, REGION);
         service.deleteSecret("secret1", 7, false, REGION);
 
-        List<SecretsManagerService.BatchSecretValue> values = service.batchGetSecretValue(
+        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(
                 List.of("secret1", "secret2"), REGION);
 
+        List<SecretsManagerService.BatchSecretValue> values = result.values();
         assertEquals(1, values.size());
         assertEquals("secret2", values.getFirst().name());
+
+        assertEquals(0, result.errors().size());
     }
 
     @Test
     void batchGetSecretValueThrowsIfNotFound() {
         service.createSecret("secret1", "value1", null, null, null, null, REGION);
-        assertThrows(AwsException.class, () ->
-                service.batchGetSecretValue(List.of("secret1", "non-existent"), REGION));
+
+        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(
+                List.of("secret1", "non-existent"), REGION);
+
+        List<SecretsManagerService.BatchSecretValue> values = result.values();
+        assertEquals(1, values.size());
+        assertEquals("secret1", values.getFirst().name());
+
+        List<SecretsManagerService.BatchGetSecretValueError> errors = result.errors();
+        assertEquals(1, errors.size());
+        assertEquals("non-existent", errors.getFirst().secretId());
+        assertEquals("ResourceNotFoundException", errors.getFirst().errorCode());
+        assertEquals("Secrets Manager can't find the specified secret.", errors.getFirst().message());
     }
 
     @Test

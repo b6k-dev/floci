@@ -18,6 +18,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
+import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -511,10 +512,12 @@ public class SecretsManagerService {
         return result;
     }
 
-    public List<BatchSecretValue> batchGetSecretValue(List<String> secretIdList, String region) {
-        List<BatchSecretValue> result = new ArrayList<>();
+    public BatchGetSecretValueResult batchGetSecretValue(List<String> secretIdList, String region) {
+        List<BatchSecretValue> secretValues = new ArrayList<>();
+        List<BatchGetSecretValueError> errors = new ArrayList<>();
+
         if (secretIdList == null) {
-            return result;
+            return BatchGetSecretValueResult.empty();
         }
 
         for (String secretId : secretIdList) {
@@ -525,7 +528,7 @@ public class SecretsManagerService {
                 }
                 SecretVersion version = findVersionByStage(secret, AWSCURRENT);
                 if (version != null) {
-                    result.add(new BatchSecretValue(
+                    secretValues.add(new BatchSecretValue(
                             secret.getArn(),
                             secret.getName(),
                             version.getSecretString(),
@@ -536,14 +539,11 @@ public class SecretsManagerService {
                     ));
                 }
             } catch (AwsException e) {
-                // AWS documentation says: "Secrets Manager doesn't return an error if a secret in the SecretIdList doesn't exist."
-                // Wait, let me re-check that. 
-                // Actually, "If any of the secrets in the SecretIdList don't exist, Secrets Manager returns an error."
-                // Let me verify this in the AWS docs.
-                throw e;
+                errors.add(new BatchGetSecretValueError(secretId, "ResourceNotFoundException", e.getMessage()));
             }
         }
-        return result;
+
+        return new BatchGetSecretValueResult(secretValues, errors);
     }
 
     public Secret updateSecretVersionStage(String secretId, String moveToVersionId, String removeFromVersionId, String versionStage, String region) {
@@ -637,6 +637,22 @@ public class SecretsManagerService {
             List<String> versionStages,
             Instant createdDate
     ) {
+    }
+
+    public record BatchGetSecretValueError(
+            String secretId,
+            String errorCode,
+            String message
+    ) {
+    }
+
+    public record BatchGetSecretValueResult(
+        List<BatchSecretValue> values,
+        List<BatchGetSecretValueError> errors
+    ) {
+        public static BatchGetSecretValueResult empty() {
+            return new BatchGetSecretValueResult(Collections.emptyList(), Collections.emptyList());
+        }
     }
 
     private Secret resolveSecret(String secretId, String region) {

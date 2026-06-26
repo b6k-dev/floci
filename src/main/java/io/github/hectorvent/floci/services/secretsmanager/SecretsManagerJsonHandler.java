@@ -70,11 +70,11 @@ public class SecretsManagerJsonHandler {
         }
 
         // Filters are not fully implemented yet, but for now we only support SecretIdList
-        List<SecretsManagerService.BatchSecretValue> values = service.batchGetSecretValue(secretIdList, region);
+        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(secretIdList, region);
 
         ObjectNode response = objectMapper.createObjectNode();
         ArrayNode secretValues = objectMapper.createArrayNode();
-        for (SecretsManagerService.BatchSecretValue value : values) {
+        for (SecretsManagerService.BatchSecretValue value : result.values()) {
             ObjectNode node = objectMapper.createObjectNode();
             node.put("ARN", value.arn());
             node.put("Name", value.name());
@@ -96,6 +96,19 @@ public class SecretsManagerJsonHandler {
             secretValues.add(node);
         }
         response.set("SecretValues", secretValues);
+
+        ArrayNode errors = objectMapper.createArrayNode();
+        for (SecretsManagerService.BatchGetSecretValueError error : result.errors()) {
+            ObjectNode node = objectMapper.createObjectNode();
+
+            node.put("SecretId", error.secretId());
+            node.put("ErrorCode", error.errorCode());
+            node.put("Message", error.message());
+
+            errors.add(node);
+        }
+        response.set("Errors", errors);
+
         return Response.ok(response).build();
     }
 
