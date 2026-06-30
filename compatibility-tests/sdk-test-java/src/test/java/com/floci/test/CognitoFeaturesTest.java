@@ -128,26 +128,6 @@ class CognitoFeaturesTest {
     }
 
     @Test
-    @Order(6)
-    void createUserPoolClientDoesNotReturnEmptyOptionalBlocks() {
-        CreateUserPoolClientResponse resp = cognito.createUserPoolClient(b -> b
-                .userPoolId(poolId)
-                .clientName("user-pool-client"));
-        UserPoolClientType client = resp.userPoolClient();
-        userPoolClientId = client.clientId();
-
-        assertThat(client.analyticsConfiguration())
-                .as("analyticsConfiguration must be null when not set")
-                .isNull();
-        assertThat(client.tokenValidityUnits())
-                .as("tokenValidityUnits must be null when not set")
-                .isNull();
-        assertThat(client.refreshTokenRotation())
-                .as("refreshTokenRotation must be null when not set")
-                .isNull();
-    }
-
-    @Test
     @Order(5)
     void createUserWithPermPassword() {
         cognito.adminCreateUser(b -> b
@@ -170,6 +150,26 @@ class CognitoFeaturesTest {
                 .findFirst()
                 .orElse(null);
         assertThat(userSub).isNotBlank();
+    }
+
+    @Test
+    @Order(6)
+    void createUserPoolClientDoesNotReturnEmptyOptionalBlocks() {
+        CreateUserPoolClientResponse resp = cognito.createUserPoolClient(b -> b
+                .userPoolId(poolId)
+                .clientName("user-pool-client"));
+        UserPoolClientType client = resp.userPoolClient();
+        userPoolClientId = client.clientId();
+
+        assertThat(client.analyticsConfiguration())
+                .as("analyticsConfiguration must be null when not set")
+                .isNull();
+        assertThat(client.tokenValidityUnits())
+                .as("tokenValidityUnits must be null when not set")
+                .isNull();
+        assertThat(client.refreshTokenRotation())
+                .as("refreshTokenRotation must be null when not set")
+                .isNull();
     }
 
     // ── Issue #229 — InitiateAuth rejects when no password hash is set ────────
