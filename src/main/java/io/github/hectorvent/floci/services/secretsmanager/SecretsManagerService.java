@@ -539,7 +539,7 @@ public class SecretsManagerService {
                     ));
                 }
             } catch (AwsException e) {
-                errors.add(new BatchGetSecretValueError(secretId, "ResourceNotFoundException", e.getMessage()));
+                errors.add(new BatchGetSecretValueError(secretId, e.getErrorCode(), e.getMessage()));
             }
         }
 
