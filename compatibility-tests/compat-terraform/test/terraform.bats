@@ -201,4 +201,6 @@ setup() {
     run aws_cmd cognito-idp list-user-pool-clients --user-pool-id "$POOL_ID" \
         --query "UserPoolClients[?ClientName=='floci-compat-pool-client'].ClientId | [0]" --output text
     assert_success
+    [ -n "$output" ]
+    [ "$output" != "None" ]
 }
