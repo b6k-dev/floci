@@ -64,17 +64,63 @@ public class SecretsManagerJsonHandler {
                     .build();
         }
 
-        List<String> secretIdList = new ArrayList<>();
-        if (request.has("SecretIdList")) {
-            request.path("SecretIdList").forEach(id -> secretIdList.add(id.asText()));
+        if (request.has("SecretIdList") && request.has("Filters")) {
+            return Response.status(400)
+                    .entity(new AwsErrorResponse("InvalidParameterException", "You cannot specify both SecretIdList and Filters."))
+                    .build();
         }
 
-        // Filters are not fully implemented yet, but for now we only support SecretIdList
-        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(secretIdList, region);
+        List<SecretsManagerService.BatchSecretValue> values;
+        List<SecretsManagerService.BatchGetSecretValueError> errors = List.of();
+        String nextToken = null;
+
+        if (request.has("SecretIdList")) {
+            List<String> secretIdList = new ArrayList<>();
+            request.path("SecretIdList").forEach(id -> secretIdList.add(id.asText()));
+            SecretsManagerService.BatchGetSecretValueResult result =
+                    service.batchGetSecretValue(secretIdList, region);
+            values = result.values();
+            errors = result.errors();
+        } else {
+            // Validate paging inputs before the service scans and filters the whole store.
+            int maxResults = request.has("MaxResults") ? request.path("MaxResults").asInt() : 20;
+            if (maxResults < 1 || maxResults > 20) {
+                return Response.status(400)
+                        .entity(new AwsErrorResponse("InvalidParameterException", "MaxResults must be between 1 and 20."))
+                        .build();
+            }
+
+            int startIndex = 0;
+            if (request.has("NextToken")) {
+                try {
+                    startIndex = Integer.parseInt(request.path("NextToken").asText());
+                    if (startIndex < 0) {
+                        throw new NumberFormatException("negative NextToken");
+                    }
+                } catch (NumberFormatException e) {
+                    return Response.status(400)
+                            .entity(new AwsErrorResponse("InvalidNextTokenException", "The NextToken value is invalid."))
+                            .build();
+                }
+            }
+
+            List<SecretsManagerService.BatchSecretValue> allFilteredValues =
+                    service.batchGetSecretValueByFilters(parseFilters(request), region);
+
+            if (startIndex > allFilteredValues.size()) {
+                values = List.of();
+            } else {
+                int endIndex = Math.min(startIndex + maxResults, allFilteredValues.size());
+                values = allFilteredValues.subList(startIndex, endIndex);
+                if (endIndex < allFilteredValues.size()) {
+                    nextToken = String.valueOf(endIndex);
+                }
+            }
+        }
 
         ObjectNode response = objectMapper.createObjectNode();
         ArrayNode secretValues = objectMapper.createArrayNode();
-        for (SecretsManagerService.BatchSecretValue value : result.values()) {
+        for (SecretsManagerService.BatchSecretValue value : values) {
             ObjectNode node = objectMapper.createObjectNode();
             node.put("ARN", value.arn());
             node.put("Name", value.name());
@@ -97,18 +143,19 @@ public class SecretsManagerJsonHandler {
         }
         response.set("SecretValues", secretValues);
 
-        ArrayNode errors = objectMapper.createArrayNode();
-        for (SecretsManagerService.BatchGetSecretValueError error : result.errors()) {
+        ArrayNode errorNodes = objectMapper.createArrayNode();
+        for (SecretsManagerService.BatchGetSecretValueError error : errors) {
             ObjectNode node = objectMapper.createObjectNode();
-
             node.put("SecretId", error.secretId());
             node.put("ErrorCode", error.errorCode());
             node.put("Message", error.message());
-
-            errors.add(node);
+            errorNodes.add(node);
         }
-        response.set("Errors", errors);
+        response.set("Errors", errorNodes);
 
+        if (nextToken != null) {
+            response.put("NextToken", nextToken);
+        }
         return Response.ok(response).build();
     }
 
@@ -282,8 +329,23 @@ public class SecretsManagerJsonHandler {
         return Response.ok(response).build();
     }
 
+    /** Parses the request's {@code Filters} array, shared by BatchGetSecretValue and ListSecrets. */
+    private List<SecretsManagerService.Filter> parseFilters(JsonNode request) {
+        List<SecretsManagerService.Filter> filters = new ArrayList<>();
+        JsonNode filtersNode = request.path("Filters");
+        if (filtersNode.isArray()) {
+            for (JsonNode f : filtersNode) {
+                String key = f.path("Key").asText();
+                List<String> filterValues = new ArrayList<>();
+                f.path("Values").forEach(v -> filterValues.add(v.asText()));
+                filters.add(new SecretsManagerService.Filter(key, filterValues));
+            }
+        }
+        return filters;
+    }
+
     private Response handleListSecrets(JsonNode request, String region) {
-        List<Secret> secrets = new ArrayList<>(service.listSecrets(region));
+        List<Secret> secrets = new ArrayList<>(service.listSecrets(region, parseFilters(request)));
         // AWS lists secrets by CreatedDate when SortBy is absent; sort on it (name as a
         // tiebreaker) for AWS-matching, stable pagination across calls.
         secrets.sort(Comparator.comparing(Secret::getCreatedDate, Comparator.nullsLast(Comparator.naturalOrder()))
