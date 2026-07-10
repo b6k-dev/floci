@@ -345,7 +345,7 @@ class SecretsManagerServiceTest {
     }
 
     @Test
-    void batchGetSecretValueSkipsDeleted() {
+    void batchGetSecretValueReportsDeletedInErrors() {
         service.createSecret("secret1", "value1", null, null, null, null, REGION);
         service.createSecret("secret2", "value2", null, null, null, null, REGION);
         service.deleteSecret("secret1", 7, false, REGION);
@@ -357,11 +357,35 @@ class SecretsManagerServiceTest {
         assertEquals(1, values.size());
         assertEquals("secret2", values.getFirst().name());
 
-        assertEquals(0, result.errors().size());
+        List<SecretsManagerService.BatchGetSecretValueError> errors = result.errors();
+        assertEquals(1, errors.size());
+        assertEquals("secret1", errors.getFirst().secretId());
+        assertEquals("InvalidRequestException", errors.getFirst().errorCode());
+        assertEquals("You can't perform this operation on the secret because it was marked for deletion.",
+                errors.getFirst().message());
     }
 
     @Test
-    void batchGetSecretValueThrowsIfNotFound() {
+    void batchGetSecretValueReportsMissingCurrentVersionInErrors() {
+        service.createSecret("secret1", "value1", null, null, null, null, REGION);
+
+        Secret secret = service.describeSecret("secret1", REGION);
+        SecretVersion version = secret.getVersions().get(secret.getCurrentVersionId());
+        version.setVersionStages(List.of());
+
+        SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(
+                List.of("secret1"), REGION);
+
+        assertEquals(0, result.values().size());
+
+        List<SecretsManagerService.BatchGetSecretValueError> errors = result.errors();
+        assertEquals(1, errors.size());
+        assertEquals("secret1", errors.getFirst().secretId());
+        assertEquals("ResourceNotFoundException", errors.getFirst().errorCode());
+    }
+
+    @Test
+    void batchGetSecretValueReportsMissingInErrors() {
         service.createSecret("secret1", "value1", null, null, null, null, REGION);
 
         SecretsManagerService.BatchGetSecretValueResult result = service.batchGetSecretValue(

@@ -627,20 +627,27 @@ public class SecretsManagerService {
             try {
                 Secret secret = resolveSecret(secretId, region);
                 if (secret.getDeletedDate() != null) {
+                    errors.add(new BatchGetSecretValueError(secretId, "InvalidRequestException",
+                            "You can't perform this operation on the secret because it was marked for deletion."));
                     continue;
                 }
+
                 SecretVersion version = findVersionByStage(secret, AWSCURRENT);
-                if (version != null) {
-                    secretValues.add(new BatchSecretValue(
-                            secret.getArn(),
-                            secret.getName(),
-                            version.getSecretString(),
-                            version.getSecretBinary(),
-                            version.getVersionId(),
-                            version.getVersionStages(),
-                            version.getCreatedDate()
-                    ));
+                if (version == null) {
+                    errors.add(new BatchGetSecretValueError(secretId, "ResourceNotFoundException",
+                            "Secrets Manager can't find the specified secret value for staging label: " + AWSCURRENT));
+                    continue;
                 }
+
+                secretValues.add(new BatchSecretValue(
+                        secret.getArn(),
+                        secret.getName(),
+                        version.getSecretString(),
+                        version.getSecretBinary(),
+                        version.getVersionId(),
+                        version.getVersionStages(),
+                        version.getCreatedDate()
+                ));
             } catch (AwsException e) {
                 errors.add(new BatchGetSecretValueError(secretId, e.getErrorCode(), e.getMessage()));
             }
